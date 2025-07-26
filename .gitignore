@@ -1,0 +1,45 @@
+# Build artifacts
+whisper.cpp/
+build/
+models/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Audio files
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.ogg
+*.wma
+
+# Output files
+*.txt
+!README.md
+!requirements.txt
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
