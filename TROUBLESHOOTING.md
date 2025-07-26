@@ -103,9 +103,24 @@ whisper.cpp will automatically use available GPU acceleration. To verify:
 # Check if CUDA is available (NVIDIA)
 nvidia-smi
 
-# Check if Metal is available (Apple Silicon)
-system_profiler SPDisplaysDataType | grep Metal
+# Check CUDA compatibility and build status
+python check_cuda_compatibility.py
 ```
+
+#### CUDA Build Errors (PTX/movmatrix errors)
+If you see errors like "Feature 'movmatrix' requires PTX ISA .version 7.8":
+
+```bash
+# Check CUDA compatibility first
+!python check_cuda_compatibility.py
+
+# If CUDA build fails, force CPU build
+!cd whisper.cpp && rm -rf build && mkdir build && cd build
+!cd whisper.cpp/build && cmake .. -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_BLAS=ON
+!cd whisper.cpp/build && cmake --build . -j --config Release
+```
+
+The setup script automatically falls back to CPU build if CUDA compilation fails.
 
 ### File Issues
 

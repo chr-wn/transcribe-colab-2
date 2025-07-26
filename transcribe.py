@@ -310,8 +310,15 @@ fi
         if self.gpu_capabilities['cuda']:
             # Use more threads for GPU acceleration
             cmd.extend(["-t", str(min(8, os.cpu_count() or 4))])
-            # Enable GPU processing
-            cmd.extend(["--gpu-layers", "999"])  # Use all GPU layers
+            # Try to enable GPU processing (may not be available in all builds)
+            try:
+                # Test if GPU layers option is supported
+                test_result = subprocess.run([str(self.whisper_cpp_path), "--help"], 
+                                           capture_output=True, text=True)
+                if "--gpu-layers" in test_result.stdout:
+                    cmd.extend(["--gpu-layers", "999"])
+            except:
+                pass  # GPU layers not supported, continue with CPU
         else:
             # CPU optimization
             cmd.extend(["-t", str(os.cpu_count() or 4)])
