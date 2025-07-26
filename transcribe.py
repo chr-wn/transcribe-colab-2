@@ -298,39 +298,23 @@ fi
         
         start_time = time.time()
         
-        # Build whisper.cpp command with GPU optimizations
+        # Build whisper.cpp command - use simpler, more reliable arguments
         cmd = [
             str(self.whisper_cpp_path),
             "-m", str(self.model_path),
-            "-f", str(input_path),
-            "--output-txt"
+            "-f", str(input_path)
         ]
         
-        # Add GPU-specific optimizations
-        if self.gpu_capabilities['cuda']:
-            # Use more threads for GPU acceleration
-            cmd.extend(["-t", str(min(8, os.cpu_count() or 4))])
-            # Try to enable GPU processing (may not be available in all builds)
-            try:
-                # Test if GPU layers option is supported
-                test_result = subprocess.run([str(self.whisper_cpp_path), "--help"], 
-                                           capture_output=True, text=True)
-                if "--gpu-layers" in test_result.stdout:
-                    cmd.extend(["--gpu-layers", "999"])
-            except:
-                pass  # GPU layers not supported, continue with CPU
-        else:
-            # CPU optimization
-            cmd.extend(["-t", str(os.cpu_count() or 4)])
+        # Add thread count for performance
+        cmd.extend(["-t", str(min(8, os.cpu_count() or 4))])
         
+        # Add timestamps if requested
         if include_timestamps:
-            cmd.extend(["--print-timestamps"])
+            cmd.extend(["-ot"])  # Output timestamps
         
-        # Add performance optimizations
-        cmd.extend([
-            "--no-prints",  # Reduce output noise
-            "--language", "auto"  # Auto-detect language
-        ])
+        # Add verbose output for debugging
+        if verbose:
+            cmd.extend(["-p"])  # Print progress
         
         # Show progress indicator
         spinner = None
@@ -339,15 +323,24 @@ fi
             spinner.start()
         elif verbose:
             print("   Starting transcription...")
+            print(f"   Command: {' '.join(cmd)}")
         
         try:
             # Run whisper.cpp
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            if verbose:
+                # Don't capture output in verbose mode so we can see what's happening
+                result = subprocess.run(cmd, text=True, check=True)
+                stdout = ""
+                stderr = ""
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                stdout = result.stdout
+                stderr = result.stderr
             
             # Stop spinner
             if spinner:
@@ -361,20 +354,34 @@ fi
             else:
                 print(f"   Completed in {self._format_duration(duration)}")
             
-            # Parse output
-            text = result.stdout.strip()
+            # whisper.cpp outputs to files, not stdout
+            # Look for the generated text file
+            output_file = input_path.with_suffix('.txt')
+            if output_file.exists():
+                text = output_file.read_text(encoding='utf-8').strip()
+                if verbose:
+                    print(f"   Found output file: {output_file}")
+                    print(f"   Text length: {len(text)} characters")
+            else:
+                # Fallback: try to get text from stdout
+                text = stdout.strip() if stdout else ""
+                if verbose:
+                    print(f"   No output file found, using stdout")
+                    print(f"   Text length: {len(text)} characters")
             
             # Extract language info if available
             language = "unknown"
-            if "detected language:" in result.stderr.lower():
-                for line in result.stderr.split('\n'):
+            stderr_text = stderr if stderr else ""
+            if "detected language:" in stderr_text.lower():
+                for line in stderr_text.split('\n'):
                     if "detected language:" in line.lower():
                         language = line.split(':')[-1].strip()
                         break
             
             if verbose:
                 print(f"   Language detected: {language}")
-                print(f"   Text length: {len(text)} characters")
+                if stderr_text:
+                    print(f"   Debug info: {stderr_text[:200]}...")
             
             return {
                 'text': text,
@@ -385,7 +392,12 @@ fi
         except subprocess.CalledProcessError as e:
             if spinner:
                 spinner.stop()
-            raise TranscriptionError(f"whisper.cpp failed: {e.stderr}")
+            error_msg = f"whisper.cpp failed with return code {e.returncode}"
+            if hasattr(e, 'stderr') and e.stderr:
+                error_msg += f": {e.stderr}"
+            if hasattr(e, 'stdout') and e.stdout:
+                error_msg += f"\nStdout: {e.stdout}"
+            raise TranscriptionError(error_msg)
     
     def _format_duration(self, seconds: float) -> str:
         """Format duration in a human-readable way."""
@@ -485,11 +497,23 @@ class TranscriptionService:
         """Save each result to its own output file."""
         for result in results:
             try:
-                with open(result['output_file'], 'w', encoding='utf-8') as f:
-                    f.write(result['text'])
-                    f.write('\n')
+                # Check if whisper.cpp already created a file
+                input_path = result['input_file']
+                whisper_output = input_path.with_suffix('.txt')
                 
-                print(f"Saved: {result['output_file']}")
+                if whisper_output.exists() and whisper_output != result['output_file']:
+                    # Move/copy whisper.cpp output to our desired location
+                    import shutil
+                    shutil.move(str(whisper_output), str(result['output_file']))
+                    print(f"Moved whisper.cpp output: {result['output_file']}")
+                elif result['text']:
+                    # Save our extracted text
+                    with open(result['output_file'], 'w', encoding='utf-8') as f:
+                        f.write(result['text'])
+                        f.write('\n')
+                    print(f"Saved: {result['output_file']}")
+                else:
+                    print(f"Warning: No text to save for {result['input_file']}")
                 
             except Exception as e:
                 raise TranscriptionError(f"Failed to save {result['output_file']}: {e}")
