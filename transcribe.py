@@ -168,6 +168,11 @@ class WhisperCppTranscriber:
         self.model_name = model_name
         self.whisper_cpp_path = self._find_whisper_cpp()
         self.model_path = self._ensure_model_exists()
+        self.gpu_capabilities = self._detect_gpu_capabilities()
+        
+        # Print GPU info on first initialization
+        if self.gpu_capabilities['cuda']:
+            print("GPU acceleration detected (CUDA) - using optimized settings")
     
     def _find_whisper_cpp(self) -> Path:
         """Find the whisper.cpp executable."""
@@ -192,8 +197,26 @@ class WhisperCppTranscriber:
             pass
         
         raise TranscriptionError(
-            "whisper-cli not found. Please run setup.sh first or ensure whisper.cpp is built."
+            "whisper-cli not found. Please run setup.sh or colab_setup.sh first."
         )
+    
+    def _detect_gpu_capabilities(self) -> Dict[str, bool]:
+        """Detect available GPU acceleration capabilities."""
+        capabilities = {
+            'cuda': False,
+            'vulkan': False,
+            'opencl': False
+        }
+        
+        # Check for NVIDIA GPU
+        try:
+            result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
+            if result.returncode == 0:
+                capabilities['cuda'] = True
+        except FileNotFoundError:
+            pass
+        
+        return capabilities
     
     def _ensure_model_exists(self) -> Path:
         """Ensure the model file exists, download if necessary."""
@@ -275,7 +298,7 @@ fi
         
         start_time = time.time()
         
-        # Build whisper.cpp command
+        # Build whisper.cpp command with GPU optimizations
         cmd = [
             str(self.whisper_cpp_path),
             "-m", str(self.model_path),
@@ -283,8 +306,24 @@ fi
             "--output-txt"
         ]
         
+        # Add GPU-specific optimizations
+        if self.gpu_capabilities['cuda']:
+            # Use more threads for GPU acceleration
+            cmd.extend(["-t", str(min(8, os.cpu_count() or 4))])
+            # Enable GPU processing
+            cmd.extend(["--gpu-layers", "999"])  # Use all GPU layers
+        else:
+            # CPU optimization
+            cmd.extend(["-t", str(os.cpu_count() or 4)])
+        
         if include_timestamps:
             cmd.extend(["--print-timestamps"])
+        
+        # Add performance optimizations
+        cmd.extend([
+            "--no-prints",  # Reduce output noise
+            "--language", "auto"  # Auto-detect language
+        ])
         
         # Show progress indicator
         spinner = None
