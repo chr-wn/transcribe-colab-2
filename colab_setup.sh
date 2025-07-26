@@ -6,7 +6,9 @@ set -e
 echo "Setting up Audio Transcription Tool for Google Colab with GPU acceleration..."
 
 # Set up CUDA environment variables
-export CUDA_HOME=/usr/local/cuda-12.1
+
+export CUDACXX=/usr/local/cuda/bin/nvcc
+export CUDA_HOME=/usr/local/cuda
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 export PATH=$CUDA_HOME/bin:$PATH
 
